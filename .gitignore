@@ -1,0 +1,8 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Cache folder
+cache
+
+# Environments
+.cfswarm_venv
