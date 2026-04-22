@@ -11,7 +11,7 @@ import tkinter as tk
 class PlotApp(tk.Tk):
     global position_estimate
 
-    def __init__(self, crazyflie_logconf, logdata, *args, **kwargs):
+    def __init__(self, crazyflie_logconf, t, x, y, z, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.update_idletasks()
@@ -40,17 +40,17 @@ class PlotApp(tk.Tk):
 
         self.ax1 = self.figure.add_subplot(3, 1, 1)
         self.ax1.set_title('stateEstimate.x', loc='left', fontstyle='oblique', fontsize='medium')
-        self.ax1.set(xlim=[0, 1000], ylim=[-1.0, 1.0], xlabel='Time [ms]', ylabel='X [m]')
+        self.ax1.set(xlim=[0, 40000], ylim=[-1.0, 1.0], xlabel='Time [ms]', ylabel='X [m]')
         self.signal1, = self.ax1.plot(np.array([]), np.array([]), linewidth=1.2, marker='')
 
         self.ax2 = self.figure.add_subplot(3, 1, 2)
         self.ax2.set_title('stateEstimate.y', loc='left', fontstyle='oblique', fontsize='medium')
-        self.ax2.set(xlim=[0, 1000], ylim=[-1.0, 1.0], xlabel='Time [ms]', ylabel='Y [m]')
+        self.ax2.set(xlim=[0, 40000], ylim=[-1.0, 1.0], xlabel='Time [ms]', ylabel='Y [m]')
         self.signal2, = self.ax2.plot(np.array([]), np.array([]), linewidth=1.2, marker='', color='green')
 
         self.ax3 = self.figure.add_subplot(3, 1, 3)
         self.ax3.set_title('stateEstimate.z', loc='left', fontstyle='oblique', fontsize='medium')
-        self.ax3.set(xlim=[0, 1000], ylim=[-1.0, 1.0], xlabel='Time [ms]', ylabel='Z [m]')
+        self.ax3.set(xlim=[0, 40000], ylim=[-1.0, 1.0], xlabel='Time [ms]', ylabel='Z [m]')
         self.signal3, = self.ax3.plot(np.array([]), np.array([]), linewidth=1.2, marker='', color='orange')
 
         self.ax3.margins(x=0)
@@ -59,31 +59,8 @@ class PlotApp(tk.Tk):
 
         def init():
             print("[PlotApp]: Plot initialization")
-            data = np.array([])
+            #data = np.array([])
             
-            self.signal1.set_xdata(data)
-            self.signal1.set_ydata(data)
-
-            self.signal2.set_xdata(data)
-            self.signal2.set_ydata(data)
-            
-            self.signal3.set_xdata(data)
-            self.signal3.set_ydata(data)
-
-            return self.signal1, self.signal2, self.signal3,
-
-        def update(frame):
-
-            t = self.signal1.get_xdata()
-            x = self.signal1.get_ydata() # numpy.ndarray class
-            y = self.signal2.get_ydata()
-            z = self.signal3.get_ydata()
-
-            t = np.append(t, frame*1)
-            x = np.append(x, logdata[0]) # frame[1]['stateEstimate.x'])
-            y = np.append(y, logdata[1]) # frame[1]['stateEstimate.y'])
-            z = np.append(z, logdata[2]) # frame[1]['stateEstimate.y'])
-
             self.signal1.set_xdata(t)
             self.signal1.set_ydata(x)
 
@@ -92,6 +69,28 @@ class PlotApp(tk.Tk):
             
             self.signal3.set_xdata(t)
             self.signal3.set_ydata(z)
+
+            return self.signal1, self.signal2, self.signal3,
+
+        def update(frame):
+            nonlocal t, x, y, z
+
+            #t = self.signal1.get_xdata()
+            #x = self.signal1.get_ydata() # numpy.ndarray class
+            #y = self.signal2.get_ydata()
+            #z = self.signal3.get_ydata()
+            
+
+            #t = np.append(t, frame*1)
+            #x = np.append(x, logdata[0]) # frame[1]['stateEstimate.x'])
+            #y = np.append(y, logdata[1]) # frame[1]['stateEstimate.y'])
+            #z = np.append(z, logdata[2]) # frame[1]['stateEstimate.y'])
+
+            self.signal1.set_xdata(t)
+            self.signal1.set_ydata(x)
+
+            self.signal2.set_data(t, y)
+            self.signal3.set_data(t, z)
 
             xmin, xmax = self.ax1.get_xlim()
 
@@ -138,10 +137,11 @@ class PlotApp(tk.Tk):
                 ax.set_ylim(-1.3*ymin, ymax)
                 ax.figure.canvas.draw()
             """
-
+            #print(f"{t}\n{x}")
             #print("[PlotApp]: ", logdata)
             return self.signal1, self.signal2, self.signal3,
         
+        # ? Define a data picker function to use in frames
         self.ani = animation.FuncAnimation(
             fig=self.figure, 
             func=partial(update), 

@@ -1,5 +1,20 @@
 version = 1
 
+# Original (Nino) - Leader
+[device.cf2_flow2_multiranger]
+radio = "radio://0/80/2M/E7E7E7E701"
+decks = ["bcFlow2", "bcMultiranger"]
+
+# Lillo - Follower
+[device.stock]
+radio = "radio://0/80/2M/E7E7E7E702"
+
+# Melo - Follower
+[device.stock]
+radio = "radio://0/80/2M/E7E7E7E703"
+
+
+
 [device.cf2_flow2_lighthouse]
 radio = "radio://0/50/2M/E7E7E71706"
 decks = ["bcFlow2", "bcLighthouse4"]

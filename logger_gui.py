@@ -5,6 +5,7 @@ from cflib.crazyflie.log import LogConfig
 from custom_classes.LogConfigGen import LogConfigGen
 from cflib.crazyflie.syncLogger import SyncLogger
 from cflib.positioning.motion_commander import MotionCommander
+from cflib.crazyflie.high_level_commander import HighLevelCommander
 from cflib.utils import uri_helper
 from cflib.utils.reset_estimator import reset_estimator
 
@@ -34,14 +35,14 @@ print("Matplotlib Backend ", matplotlib.get_backend())
 load_dotenv()  # reads variables from a .env file and sets them in os.environ
 
 # URI to the Crazyflie to connect to
-uri = uri_helper.uri_from_env(default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE1_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # Events
 deck_attached_event = Event()
 crazyflie_ready = Event()
 
 # Logging
-logging.basicConfig(level=logging.ERROR) # Only output errors from the logging framework
+logging.basicConfig(level=logging.WARNING) # Only output errors from the logging framework
                                          # logging.DEBUG 
 # Logging configuration initialization
 def log_init():
@@ -57,12 +58,11 @@ def log_init():
     lg_pos.add_variable('stateEstimate.z', 'float')
     return lg_pos
 
-position_estimate = [0, 0]
 def log_gen():
     global position_estimate
     yield position_estimate
 
-DEFAULT_HEIGHT = 0.5
+DEFAULT_HEIGHT = 0.3
 BOX_LIMIT = 0.3
 
 # Matplotlib animation callback
@@ -74,12 +74,6 @@ def init():
     del ydata[:]
     line.set_data(xdata, ydata)
     return line,
-
-def data_picker():
-    global position_estimate
-    for cnt in itertools.count():
-        t = cnt / 10
-        yield t, position_estimate[1]
 
 def run(data):
 
@@ -106,7 +100,6 @@ def run(data):
     plt.pause(0.05)
     return line,
 
-
 # Console callback
 def console_callback(text: str):
     print(f"[Console]: {text}", end='')
@@ -116,11 +109,21 @@ def log_pos_callback(timestamp, data, logconf):
     
     # replace the print function in the callback wit{h a plotter, python lib matplotlib
     #print(f"[{timestamp}][{logconf.name}]: {data}")
-    
+
+    global se_t, se_x, se_y, se_z
+    se_t.append(len(se_t) * logconf.period_in_ms)
+    se_x.append(data['stateEstimate.x'])
+    se_y.append(data['stateEstimate.y'])
+    se_z.append(data['stateEstimate.z'])
+
+    #print(f"{se_t}\n{se_x}")
+
+    """
     global position_estimate
     position_estimate[0] = data['stateEstimate.x']
     position_estimate[1] = data['stateEstimate.y']
     position_estimate[2] = data['stateEstimate.z']
+    """
 
 def logging_error(logconf, msg):
         print("Error when logging %s" % logconf.name)
@@ -204,14 +207,45 @@ def move_linear_simple(scf):
         mc.forward(0.5)
         time.sleep(1)
 
+def figure8(scf):
+    cf = scf.cf
+
+    for y in range(10):
+        cf.commander.send_hover_setpoint(0, 0, 0, y / 25)
+        time.sleep(0.1)
+    
+    for _ in range(20):
+        cf.commander.send_hover_setpoint(0, 0, 0, 0.4)
+        time.sleep(0.1)
+    
+    for _ in range(35):
+        cf.commander.send_hover_setpoint(0.2, 0, -32 * 2, 0.4)
+        time.sleep(0.1)
+    """
+    for _ in range(35):
+        cf.commander.send_hover_setpoint(0.2, 0, -28 * 2, 0.4)
+        time.sleep(0.1)
+    """
+    for _ in range(20):
+        cf.commander.send_hover_setpoint(0, 0, 0, 0.4)
+        time.sleep(0.1)
+
+    for y in range(10):
+        cf.commander.send_hover_setpoint(0, 0, 0, (10 - y) / 25)
+        time.sleep(0.3)
+    
+    time.sleep(1)
+    cf.commander.send_notify_setpoint_stop()
+    #cf.commander.send_stop_setpoint()
+
 # Offboard control - Figures
 def figure_8(scf):
 
     cf = scf.cf
 
     for y in range(10):
-            cf.commander.send_hover_setpoint(0, 0, 0, y / 25)
-            time.sleep(0.1)
+        cf.commander.send_hover_setpoint(0, 0, 0, y / 25)
+        time.sleep(0.1)
 
     for _ in range(20):
         cf.commander.send_hover_setpoint(0, 0, 0, 0.4)
@@ -236,7 +270,7 @@ def figure_8(scf):
     cf.commander.send_stop_setpoint()
     
     # Hand control over to the high level commander to avoid timeout and locking of the Crazyflie
-    cf.commander.send_notify_setpoint_stop()
+    #cf.commander.send_notify_setpoint_stop()
 
 def update_signal(frame, signal):
     if frame:
@@ -284,7 +318,7 @@ def crazyflie_thread(uri):
     cflib.crtp.init_drivers()
 
     # Crazyradio Interface scanning
-    available = cflib.crtp.scan_interfaces(address=0xE7E7E7E7E7)
+    available = cflib.crtp.scan_interfaces(address=0xE7E7E7E701)
     for i in available:
         print("Found Crazyflie on URI [%s] with comment [%s]" % (i[0], i[1]) )
 
@@ -332,35 +366,48 @@ def crazyflie_thread(uri):
         time.sleep(1.0)
 
         crazyflie_ready.set()
+        time.sleep(3.0)
 
         global position_estimate
+        global se_t, se_x, se_y, se_z
 
+        """
+        hl = HighLevelCommander(scf)
+        hl.takeoff(1.0, 5, group_mask=HighLevelCommander.ALL_GROUPS, yaw=0.0)
+        hl.land(1.0, 5, group_mask=HighLevelCommander.ALL_GROUPS,yaw=0.0)
+        """
         #take_off_simple(scf)
         #move_linear_simple(scf)
         #move_box_limit(scf)
         #bounce_box_limit(scf)
-        #figure_8(scf)
+        figure8(scf)
 
         #logconf.stop()
+
         while True:
             time.sleep(1)
+            #print(f"{se_t}\n{se_x}")
             #print(f"[Script]: Position estimate ({position_estimate[0]}, {position_estimate[1]})")
 
 # Main Thread
 if __name__ == '__main__':
     
     position_estimate = [0, 0, 0]
+    se_t = [] #np.array([])
+    se_x = [] #np.array([])
+    se_y = [] #np.array([])
+    se_z = [] #np.array([])
 
     logconf = log_init()
 
     cf_thread = Thread(target=crazyflie_thread, args=(uri, ), daemon=True) # kwargs={"":None}
     cf_thread.start()
 
-    if not crazyflie_ready.wait(timeout=15):
+    if not crazyflie_ready.wait(timeout=20):
         print('[Script]: Timeout Crazyflie connection')
         sys.exit(1)
 
-    root = PlotApp(logconf, position_estimate)
+    root = PlotApp(logconf, t=se_t, x=se_x, y=se_y, z=se_z)
 
     root.mainloop()
 
@@ -376,6 +423,7 @@ if __name__ == '__main__':
     ax.set(xlim=[0, 100], ylim=[-0.5, 0.5], xlabel='Time [ms]', ylabel='Y [m]')
     #ax.set(xlim=[-1.0, 1.0], ylim=[-1.0, 1.0], xlabel='X [m]', ylabel='Y [m]')
     line, = ax.plot(np.array([]), np.array([]), linewidth=1.5, marker='')
+
     # Only save last 100 frames, but run forever
     #ani = animation.FuncAnimation(fig, run, data_picker, interval=500, init_func=init, blit=True, save_count=100)
     #plt.show(block=False)
@@ -392,12 +440,7 @@ if __name__ == '__main__':
             print("[Script]: Enter in SyncLogger")
             flag_exit = 0
 
-            # Arm the Crazyflie
-            scf.cf.platform.send_arming_request(do_arm=True)
-            time.sleep(1.0)
-
             ani = animation.FuncAnimation(fig, func=partial(update_signal, signal=line), frames=logger, event_source=logconf, blit=True, save_count=100)
-            
             plt.show(block=True)
             plt.pause(10)
 

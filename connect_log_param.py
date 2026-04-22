@@ -5,8 +5,6 @@ from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncLogger import SyncLogger
 from cflib.utils import uri_helper
 
-
-
 from dotenv import load_dotenv
 import logging
 import time
