@@ -1,10 +1,16 @@
 """
-HIGH LEVEL COMMANDER
+=======================
+CRAZYFLIE DONGLE SWITCH
+=======================
+
+
 """
+
 # ------------------------------------
 # IMPORTS
 # ------------------------------------
 import cflib.crtp
+from cflib.drivers import crazyradio
 from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from cflib.crazyflie.log import LogConfig
@@ -16,17 +22,10 @@ from cflib.utils.reset_estimator import reset_estimator
 from dotenv import load_dotenv
 import logging
 from paths.p01_simple_takeoff import take_off_simple
-from paths.p02_figure_8 import upload_trajectory
-from paths.p03_figure_8_yaw import figure8
+import os
 import sys
 from threading import Event
 import time
-
-import itertools
-from functools import partial
-import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib.animation as animation
 
 # ------------------------------------
 # ENVIRONMENT VARIABLES
@@ -34,11 +33,6 @@ import matplotlib.animation as animation
 load_dotenv()  # reads variables from a .env file and sets them in os.environ
 
 # URI to the Crazyflie to connect to
-# The URI has
-# * Radio Dongle index: used to choose the crazyradio from the list of detected
-# * Channel
-# * Data rate
-# * Address
 uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # ------------------------------------
@@ -50,83 +44,37 @@ print("Python Version", sys.version)
 
 # Logging configuration initialization
 def log_init():
-
-    lg_stab = LogConfig(name='Stabilizer', period_in_ms=10)
-    lg_stab.add_variable('stabilizer.roll', 'float')
-    lg_stab.add_variable('stabilizer.pitch', 'float')
-    lg_stab.add_variable('stabilizer.yaw', 'float')
-
-    #lg_pos = LogConfigGen(name='Position', period_in_ms=1000)
-    log_conf = LogConfig(name='Position', period_in_ms=500)
+    log_conf = LogConfig(name='Position', period_in_ms=200)
+    """
     log_conf.add_variable('stateEstimate.x', 'float')
     log_conf.add_variable('stateEstimate.y', 'float')
     log_conf.add_variable('stateEstimate.z', 'float')
+    """
     log_conf.add_variable('kalman.stateX', 'float')
     log_conf.add_variable('kalman.stateY', 'float')
     log_conf.add_variable('kalman.stateZ', 'float')
-    
 
     return log_conf
 
-def log_radio_conf():
-    log_conf = LogConfig(name="Crazyradio")
-
 logconf = log_init()
-log_radio = log_radio_conf()
 
+# ------------------------------------
+# LOG GENERATOR
+# ------------------------------------
+def log_pos_cb2(timestamp, data, logconf):
+    print("|-" + " POSITION LOG " + "-" * 20)
+    for key, value in data.items():
+         print(f"|\t{key}: {value:2.3f}",)
+    print("-" + "--------------" + "-" * 20)
+    print("\033[6A")
+
+def log_error_cb(logconf, msg):
+        print("Error when logging %s" % logconf.name)
 # ------------------------------------
 # EVENTS
 # ------------------------------------
 deck_attached_event = Event()
 crazyflie_ready = Event()
-
-# ------------------------------------
-# PLOT
-# ------------------------------------
-fig, ax = plt.subplots()
-line, = ax.plot([], [], lw=2)
-ax.grid()
-ax.set_xlim(-1, 1)
-ax.set_ylim(-1, 1)
-xdata, ydata = [], []
-
-def run(data):
-    x = data['stateEstimate.x']
-    y = data['stateEstimate.y']
-    global xdata
-    global ydata
-    global line
-    if x and y:
-        xdata.append(x)
-        ydata.append(y)
-        line.set_data(xdata, ydata)
-    return line,
-
-# ------------------------------------
-# LOG GENERATOR
-# ------------------------------------
-def log_pos_cb(timestamp, data, logconf):
-    x = data['stateEstimate.x']
-    y = data['stateEstimate.y']
-    global xdata
-    global ydata
-    global line
-    if x and y:
-        xdata.append(x)
-        ydata.append(y)
-        line.set_data(xdata, ydata)
-        print('[%d][%s]: %s' % (timestamp, logconf.name, data), end='\r')
-    return line,
-
-def log_pos_cb2(timestamp, data, logconf):
-    print("-" + " POSITION LOG " + "-" * 20)
-    for key, value in data.items():
-         print(f"{key}: {value:2.3f}",)
-    print("\n-" + "--------------" + "-" * 20)
-    print("\033[10A")
-    
-def log_error_cb(logconf, msg):
-        print("Error when logging %s" % logconf.name)
 
 # ------------------------------------
 # CONFIGURATION
@@ -197,33 +145,20 @@ def pre_checks(scf):
     # State checks
     scf.cf.param.set_value('supervisor.infdmp', '1') # When nonzero, dump information about the current supervisor state to the console log
 
-    # Log configuration to logging framework
-    scf.cf.log.add_config(logconf)
-
-    #def log_stab_callback(timestamp, data, logconf):
-    #    print('[%d][%s]: %s' % (timestamp, logconf.name, data), end='\r')
-
-    if logconf.valid:
-        #logconf.data_received_cb.add_callback(log_stab_callback)
-        logconf.data_received_cb.add_callback(log_pos_cb2)
-        logconf.error_cb.add_callback(log_error_cb)
-    else:
-        print("One or more of the variables in the configuration was not found in log TOC. No logging will be possible.")
-
-def mission(scf, trajectory_id):
+def mission(scf, mission_id):
     print("-"*30)
     print("MISSION CONFIGURATION")
     print("-"*30)
 
-    duration = upload_trajectory(scf.cf, trajectory_id)
-    print('The sequence is {:.1f} seconds long'.format(duration))
 
+    duration = 0
+    print('The sequence is {:.1f} seconds long'.format(duration))
     return duration
 
-def commander(scf, trajectory_id, duration):
-    print("-"*30)
+def commander(scf):
+    print("-" * 30)
     print("COMMANDER CONTROL")
-    print("-"*30)
+    print("-" * 30)
 
     relative_yaw=False
     hl_commander = scf.cf.high_level_commander
@@ -231,6 +166,7 @@ def commander(scf, trajectory_id, duration):
     # Arm the Crazyflie
     #scf.cf.supervisor.send_arming_request(True)
     scf.cf.platform.send_arming_request(do_arm=True)
+    print("|- [COMMANDER] - DRONE ARMED!")
     time.sleep(1.0)
 
     crazyflie_ready.set()
@@ -238,28 +174,12 @@ def commander(scf, trajectory_id, duration):
 
     takeoff_yaw = 3.14 / 2 if relative_yaw else 0.0
 
-    hl_commander.takeoff(1.0, 2.0, yaw=takeoff_yaw)
+    hl_commander.takeoff(0.5, 1.5, yaw=takeoff_yaw)
+    print("|- [COMMANDER] - TAKEOFF!")
     time.sleep(3.0)
-    hl_commander.start_trajectory(trajectory_id, 1.0, relative_position=True, relative_yaw=relative_yaw)
-    time.sleep(duration)
-
-    # Land detection
-    
-    #scf.cf.commander.send_stop_setpoint()
-    # Hand control over to the high level commander to avoid timeout and locking of the Crazyflie
-    #scf.cf.commander.send_notify_setpoint_stop()
-
-    # Make sure that the last packet leaves before the link is closed
-    # since the message queue is not flushed before closing
-    #time.sleep(0.1)
-
-    hl_commander.land(0.0, 2.0)
-    
-    time.sleep(2)
-    hl_commander.stop()
+    print("|- -------- FINISH ------- ")
 
 def main():
-
     # Initialize the low-level drivers
     cflib.crtp.init_drivers(enable_debug_driver=False)
 
@@ -278,33 +198,54 @@ def main():
         pre_checks(scf)
         time.sleep(1)
 
-        # Pre configuration
+        # ---[ Pre configuration ]---
+        # Log configuration to logging framework
+        scf.cf.log.add_config(logconf)
+
+        if logconf.valid:
+            logconf.data_received_cb.add_callback(log_pos_cb2)
+            logconf.error_cb.add_callback(log_error_cb)
+        else:
+            print("One or more of the variables in the configuration was not found in log TOC. No logging will be possible.")
+
         # Activate mellinger controller
         scf.cf.param.set_value('stabilizer.controller', '1')
 
-        # Mission
-        trajectory_id = 1
-        #duration = mission(scf, trajectory_id)
+        # Mission: Take off and hold in air crazyflie
+        mission_id = 1
+        duration = mission(scf, mission_id)
 
         # Reset estimator
         reset_estimator(scf) # resets the Kalman filter and makes the Crazyflie wait until it has an accurate position estimate
         time.sleep(1)
 
+        #logconf.start() # Start logging
+
         # Commander
-        logconf.start() # Start logging
-        #commander(scf, trajectory_id, duration)
-        #take_off_simple(scf)
-        #figure8(scf)
+        commander(scf)
+        time.sleep(3)
+        print("--- END SYNC CRAZYFLIE ---")
+        scf.close_link()
+        print("--- CLOSE LINK ---")
 
-        # Only save last 100 frames, but run forever
-        #ani = animation.FuncAnimation(
-        #    fig, partial(log_pos_callback, data={'stateEstimate.x':None,'stateEstimate.y':None}, logconf=logconf),
-        #    interval=logconf.period_in_ms)
-        #plt.show()
+    print("WAIT - 10 seconds")
+    time.sleep(10)
 
+    cf = Crazyflie()
+    uri2 = "radio://1/80/2M/E7E7E7E702"
+    cf.open_link(uri2)
+    time.sleep(3)
+    cf.high_level_commander.stop()
+    print("CONNECTED WITH DONGLE 2 AND STOP")
+    cf.close_link()
 
-        while True:
+    while True:
+        try:
             time.sleep(1)
+        except KeyboardInterrupt:
+            scf.cf.commander.send_notify_setpoint_stop()
+            scf.cf.commander.send_stop_setpoint()
+            scf.cf.high_level_commander.stop()
 
 if __name__ == '__main__':
     main()
