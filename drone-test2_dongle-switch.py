@@ -33,7 +33,7 @@ import time
 load_dotenv()  # reads variables from a .env file and sets them in os.environ
 
 # URI to the Crazyflie to connect to
-uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE3_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # ------------------------------------
 # LOGGING
@@ -105,9 +105,9 @@ def pre_checks(scf):
     
     scf.cf.param.add_update_callback(group="deck", name="bcFlow2", cb=param_deck_flow)
 
-    if not deck_attached_event.wait(timeout=10):
-        print('No flow deck detected!')
-        sys.exit(1)
+    #if not deck_attached_event.wait(timeout=10):
+    #    print('No flow deck detected!')
+    #    sys.exit(1)
 
     # Sensor checks
     # IMU - Inertial Measurement Unit
@@ -232,7 +232,7 @@ def main():
     time.sleep(10)
 
     cf = Crazyflie()
-    uri2 = "radio://1/80/2M/E7E7E7E702"
+    uri2 = "radio://1/80/2M/E7E7E7E703"
     cf.open_link(uri2)
     time.sleep(3)
     cf.high_level_commander.stop()
