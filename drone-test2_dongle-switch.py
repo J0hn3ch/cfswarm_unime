@@ -26,6 +26,7 @@ import os
 import sys
 from threading import Event
 import time
+from itertools import compress
 
 # ------------------------------------
 # ENVIRONMENT VARIABLES
@@ -33,7 +34,7 @@ import time
 load_dotenv()  # reads variables from a .env file and sets them in os.environ
 
 # URI to the Crazyflie to connect to
-uri = uri_helper.uri_from_env(env='DRONE3_URI', default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE1_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # ------------------------------------
 # LOGGING
@@ -41,6 +42,7 @@ uri = uri_helper.uri_from_env(env='DRONE3_URI', default='radio://0/80/2M/E7E7E7E
 # Only output errors from the logging framework
 logging.basicConfig(level=logging.ERROR)
 print("Python Version", sys.version)
+supervisor_lookup = ["Can be armed, ", "Is armed, ", "Auto arm, ", "Can fly, ", "Is flying, ", "Is tumbled, ", "Is locked, ", "Is crashed, ", "High Level Control - Activated, ", "HL Trajectory Finish, ", "High Level Control - Disabled, "]
 
 # Logging configuration initialization
 def log_init():
@@ -56,8 +58,13 @@ def log_init():
 
     return log_conf
 
-logconf = log_init()
+def log_init2():
+    log_conf = LogConfig(name='Supervisor', period_in_ms=500)
+    log_conf.add_variable('supervisor.info', 'uint16_t')
+    return log_conf
 
+logconf = log_init()
+log_supervisor = log_init2()
 # ------------------------------------
 # LOG GENERATOR
 # ------------------------------------
@@ -70,6 +77,20 @@ def log_pos_cb2(timestamp, data, logconf):
 
 def log_error_cb(logconf, msg):
         print("Error when logging %s" % logconf.name)
+
+def log_supervisor_cb(timetamp, data, logconf):
+    print("-" + " SUPERVISOR LOG " + "-" * 20)
+    for key, value in data.items():
+        s = ""
+        indexes = [int(x) for x in list('{0:0b}'.format(value))]
+        indexes = list(map(bool,indexes))
+        s = s.join( list(compress(supervisor_lookup, indexes)) )
+        #for i in indexes:
+        #    s +=  supervisor_lookup[i] + ", "
+        print(f"{key}: {s}")
+    print("-" + "--------------" + "-" * 20)
+
+
 # ------------------------------------
 # EVENTS
 # ------------------------------------
@@ -174,7 +195,7 @@ def commander(scf):
 
     takeoff_yaw = 3.14 / 2 if relative_yaw else 0.0
 
-    hl_commander.takeoff(0.5, 1.5, yaw=takeoff_yaw)
+    hl_commander.takeoff(0.3, 1.3, yaw=takeoff_yaw)
     print("|- [COMMANDER] - TAKEOFF!")
     time.sleep(3.0)
     print("|- -------- FINISH ------- ")
@@ -200,11 +221,11 @@ def main():
 
         # ---[ Pre configuration ]---
         # Log configuration to logging framework
-        scf.cf.log.add_config(logconf)
+        scf.cf.log.add_config(log_supervisor)
 
-        if logconf.valid:
-            logconf.data_received_cb.add_callback(log_pos_cb2)
-            logconf.error_cb.add_callback(log_error_cb)
+        if log_supervisor.valid:
+            log_supervisor.data_received_cb.add_callback(log_supervisor_cb)
+            log_supervisor.error_cb.add_callback(log_error_cb)
         else:
             print("One or more of the variables in the configuration was not found in log TOC. No logging will be possible.")
 
@@ -216,11 +237,12 @@ def main():
         duration = mission(scf, mission_id)
 
         # Reset estimator
-        reset_estimator(scf) # resets the Kalman filter and makes the Crazyflie wait until it has an accurate position estimate
+        #reset_estimator(scf) # resets the Kalman filter and makes the Crazyflie wait until it has an accurate position estimate
         time.sleep(1)
 
         #logconf.start() # Start logging
-
+        log_supervisor.start()
+        
         # Commander
         commander(scf)
         time.sleep(3)
@@ -232,7 +254,7 @@ def main():
     time.sleep(10)
 
     cf = Crazyflie()
-    uri2 = "radio://1/80/2M/E7E7E7E703"
+    uri2 = "radio://1/80/2M/E7E7E7E701"
     cf.open_link(uri2)
     time.sleep(3)
     cf.high_level_commander.stop()

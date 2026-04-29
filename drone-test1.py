@@ -23,6 +23,7 @@ from threading import Event
 import time
 
 import itertools
+from itertools import compress
 from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,7 +40,7 @@ load_dotenv()  # reads variables from a .env file and sets them in os.environ
 # * Channel
 # * Data rate
 # * Address
-uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE1_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # ------------------------------------
 # LOGGING
@@ -47,6 +48,10 @@ uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E
 # Only output errors from the logging framework
 logging.basicConfig(level=logging.ERROR)
 print("Python Version", sys.version)
+
+#supervisor_lookup = {0:"Can be armed", 1:"Is armed", 2:"Auto arm", 3:"Can fly", 4:"Is flying", 5:"Is tumbled", 6:"Is locked", 
+#                     7:"Is crashed", 8:"High Level Control - Activated", 9:"HL Trajectory Finish", 10:"High Level Control - Disabled"}
+supervisor_lookup = ["Can be armed", "Is armed", "Auto arm", "Can fly", "Is flying", "Is tumbled", "Is locked", "Is crashed", "High Level Control - Activated", "HL Trajectory Finish", "High Level Control - Disabled"]
 
 # Logging configuration initialization
 def log_init():
@@ -58,21 +63,22 @@ def log_init():
 
     #lg_pos = LogConfigGen(name='Position', period_in_ms=1000)
     log_conf = LogConfig(name='Position', period_in_ms=500)
+    log_conf.add_variable('supervisor.info', 'uint16_t')
+    """
     log_conf.add_variable('stateEstimate.x', 'float')
     log_conf.add_variable('stateEstimate.y', 'float')
     log_conf.add_variable('stateEstimate.z', 'float')
     log_conf.add_variable('kalman.stateX', 'float')
     log_conf.add_variable('kalman.stateY', 'float')
     log_conf.add_variable('kalman.stateZ', 'float')
-    
-
+    """
     return log_conf
 
 def log_radio_conf():
-    log_conf = LogConfig(name="Crazyradio")
+    log_conf = LogConfig(name="Crazyradio", period_in_ms=500)
 
 logconf = log_init()
-log_radio = log_radio_conf()
+#log_radio = log_radio_conf()
 
 # ------------------------------------
 # EVENTS
@@ -121,9 +127,34 @@ def log_pos_cb(timestamp, data, logconf):
 def log_pos_cb2(timestamp, data, logconf):
     print("-" + " POSITION LOG " + "-" * 20)
     for key, value in data.items():
-         print(f"{key}: {value:2.3f}",)
+        print(f"{key}: {value:2.3f}",)
     print("\n-" + "--------------" + "-" * 20)
-    print("\033[10A")
+    #print("\033[11A")
+
+def power_decomposition(n, base=2):
+    pows = []
+    pos = 0
+    while n > 0:
+        if n % base == 1:
+            pows.append(pos)
+        n /= 2
+        pos += 1
+        print(pows)
+    return pows
+
+
+def log_supervisor_cb(timetamp, data, logconf):
+    print("-" + " SUPERVISOR LOG " + "-" * 20)
+    for key, value in data.items():
+        s = ""
+        print(value)
+        indexes = [int(x) for x in list('{0:0b}'.format(value))]
+        indexes = list(map(bool,indexes))
+        s = s.join( list(compress(supervisor_lookup, indexes)) )
+        #for i in indexes:
+        #    s +=  supervisor_lookup[i] + ", "
+        print(f"{key}: {s}")
+    print("\n-" + "--------------" + "-" * 20)
     
 def log_error_cb(logconf, msg):
         print("Error when logging %s" % logconf.name)
@@ -197,6 +228,17 @@ def pre_checks(scf):
     # State checks
     scf.cf.param.set_value('supervisor.infdmp', '1') # When nonzero, dump information about the current supervisor state to the console log
 
+    # Supervisor info
+    """
+    def log_supervisor(_, value_str):
+        group, name = _.split(".")
+        supervisor_lookup = {0:"Can be armed", 1:"Is armed", 2:"Auto arm", 3:"Can fly", 4:"Is flying", 5:"Is tumbled", 6:"Is locked", 
+                             7:"Is crashed", 8:"High Level Control - Activated", 9:"HL Trajectory Finish", 10:"High Level Control - Disabled"}
+        value = int(value_str)
+        print(f"[{group}]: {name} \"{supervisor_lookup[value]} ({value})\" is used!")
+    scf.cf.param.add_update_callback(group="supervisor", name="info", cb=log_supervisor)
+    """
+
     # Log configuration to logging framework
     scf.cf.log.add_config(logconf)
 
@@ -205,7 +247,8 @@ def pre_checks(scf):
 
     if logconf.valid:
         #logconf.data_received_cb.add_callback(log_stab_callback)
-        logconf.data_received_cb.add_callback(log_pos_cb2)
+        #logconf.data_received_cb.add_callback(log_pos_cb2)
+        logconf.data_received_cb.add_callback(log_supervisor_cb)
         logconf.error_cb.add_callback(log_error_cb)
     else:
         print("One or more of the variables in the configuration was not found in log TOC. No logging will be possible.")
@@ -238,9 +281,9 @@ def commander(scf, trajectory_id, duration):
 
     takeoff_yaw = 3.14 / 2 if relative_yaw else 0.0
 
-    hl_commander.takeoff(1.0, 2.0, yaw=takeoff_yaw)
+    #hl_commander.takeoff(1.0, 2.0, yaw=takeoff_yaw)
     time.sleep(3.0)
-    hl_commander.start_trajectory(trajectory_id, 1.0, relative_position=True, relative_yaw=relative_yaw)
+    #hl_commander.start_trajectory(trajectory_id, 1.0, relative_position=True, relative_yaw=relative_yaw)
     time.sleep(duration)
 
     # Land detection
@@ -253,10 +296,10 @@ def commander(scf, trajectory_id, duration):
     # since the message queue is not flushed before closing
     #time.sleep(0.1)
 
-    hl_commander.land(0.0, 2.0)
+    #hl_commander.land(0.0, 2.0)
     
     time.sleep(2)
-    hl_commander.stop()
+    #hl_commander.stop()
 
 def main():
 
