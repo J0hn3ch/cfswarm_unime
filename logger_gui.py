@@ -35,7 +35,7 @@ print("Matplotlib Backend ", matplotlib.get_backend())
 load_dotenv()  # reads variables from a .env file and sets them in os.environ
 
 # URI to the Crazyflie to connect to
-uri = uri_helper.uri_from_env(env='DRONE1_URI', default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # Events
 deck_attached_event = Event()
@@ -318,7 +318,7 @@ def crazyflie_thread(uri):
     cflib.crtp.init_drivers()
 
     # Crazyradio Interface scanning
-    available = cflib.crtp.scan_interfaces(address=0xE7E7E7E701)
+    available = cflib.crtp.scan_interfaces(address=0xE7E7E7E702)
     for i in available:
         print("Found Crazyflie on URI [%s] with comment [%s]" % (i[0], i[1]) )
 
@@ -380,7 +380,7 @@ def crazyflie_thread(uri):
         #move_linear_simple(scf)
         #move_box_limit(scf)
         #bounce_box_limit(scf)
-        figure8(scf)
+        #figure8(scf)
 
         #logconf.stop()
 

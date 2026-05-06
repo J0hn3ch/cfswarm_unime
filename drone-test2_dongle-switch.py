@@ -71,7 +71,7 @@ log_supervisor = log_init2()
 def log_pos_cb2(timestamp, data, logconf):
     print("|-" + " POSITION LOG " + "-" * 20)
     for key, value in data.items():
-         print(f"|\t{key}: {value:2.3f}",)
+         print(f"|\t{key}: {value:2.3f}")
     print("-" + "--------------" + "-" * 20)
     print("\033[6A")
 
@@ -254,7 +254,7 @@ def main():
     time.sleep(10)
 
     cf = Crazyflie()
-    uri2 = "radio://1/80/2M/E7E7E7E701"
+    uri2 = "radio://1/80/2M/E7E7E7E702"
     cf.open_link(uri2)
     time.sleep(3)
     cf.high_level_commander.stop()
