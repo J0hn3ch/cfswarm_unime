@@ -40,7 +40,7 @@ load_dotenv()  # reads variables from a .env file and sets them in os.environ
 # * Channel
 # * Data rate
 # * Address
-uri = uri_helper.uri_from_env(env='DRONE1_URI', default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # ------------------------------------
 # LOGGING
@@ -253,6 +253,9 @@ def pre_checks(scf):
     else:
         print("One or more of the variables in the configuration was not found in log TOC. No logging will be possible.")
 
+# ------------------------------------
+# MISSION
+# ------------------------------------
 def mission(scf, trajectory_id):
     print("-"*30)
     print("MISSION CONFIGURATION")
@@ -263,6 +266,9 @@ def mission(scf, trajectory_id):
 
     return duration
 
+# ------------------------------------
+# COMMANDER
+# ------------------------------------
 def commander(scf, trajectory_id, duration):
     print("-"*30)
     print("COMMANDER CONTROL")
@@ -281,25 +287,25 @@ def commander(scf, trajectory_id, duration):
 
     takeoff_yaw = 3.14 / 2 if relative_yaw else 0.0
 
-    #hl_commander.takeoff(1.0, 2.0, yaw=takeoff_yaw)
+    hl_commander.takeoff(1.0, 2.0, yaw=takeoff_yaw)
     time.sleep(3.0)
-    #hl_commander.start_trajectory(trajectory_id, 1.0, relative_position=True, relative_yaw=relative_yaw)
+    hl_commander.start_trajectory(trajectory_id, 1.0, relative_position=True, relative_yaw=relative_yaw)
     time.sleep(duration)
 
     # Land detection
     
     #scf.cf.commander.send_stop_setpoint()
     # Hand control over to the high level commander to avoid timeout and locking of the Crazyflie
-    #scf.cf.commander.send_notify_setpoint_stop()
+    scf.cf.commander.send_notify_setpoint_stop()
 
     # Make sure that the last packet leaves before the link is closed
     # since the message queue is not flushed before closing
     #time.sleep(0.1)
 
-    #hl_commander.land(0.0, 2.0)
+    hl_commander.land(0.0, 2.0)
     
     time.sleep(2)
-    #hl_commander.stop()
+    hl_commander.stop()
 
 def main():
 
@@ -327,7 +333,7 @@ def main():
 
         # Mission
         trajectory_id = 1
-        #duration = mission(scf, trajectory_id)
+        duration = mission(scf, trajectory_id)
 
         # Reset estimator
         reset_estimator(scf) # resets the Kalman filter and makes the Crazyflie wait until it has an accurate position estimate
@@ -335,7 +341,7 @@ def main():
 
         # Commander
         logconf.start() # Start logging
-        #commander(scf, trajectory_id, duration)
+        commander(scf, trajectory_id, duration)
         #take_off_simple(scf)
         #figure8(scf)
 
@@ -344,7 +350,6 @@ def main():
         #    fig, partial(log_pos_callback, data={'stateEstimate.x':None,'stateEstimate.y':None}, logconf=logconf),
         #    interval=logconf.period_in_ms)
         #plt.show()
-
 
         while True:
             time.sleep(1)

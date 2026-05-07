@@ -24,9 +24,9 @@ from cflib.crazyflie.swarm import Swarm
 import cflib.drivers.crazyradio as crazyradio
 from cflib.utils import uri_helper
 
-
 from dotenv import load_dotenv
 import logging
+import numpy as np
 import sys
 from threading import Event
 import time
@@ -61,6 +61,7 @@ logging.basicConfig(level=logging.DEBUG)
 print("Python Version", sys.version)
 print(f"Crazyradio 2.0 Version: {crazyradio.Crazyradio().version}")
 
+rssi_logs = []
 def log_radio_conf():
     log_conf = LogConfig(name="Radio", period_in_ms=500)
     log_conf.add_variable('radio.rssi', 'uint8_t') # Radio Signal Strength Indicator [dBm]
@@ -76,6 +77,7 @@ flag_header = False
 def log_radio_cb(timestamp, data, logconf):
     global flag_header
     global link_quality
+    global rssi_logs
     
     if not flag_header:
         print("|-" + " RADIO LOG " + "-" * 20)
@@ -88,13 +90,12 @@ def log_radio_cb(timestamp, data, logconf):
     print("| ", end='')
     print(f"{link_quality:2.2f}", end=f'{' '*(12-1)}|\t')
     for key, value in data.items():
-         
-         print(f"{value}", end=f'{' '*(len(key)-1)}|\t')
+        rssi_logs.append(value) if key == 'radio.rssi' else None
+        print(f"{value}", end=f'{' '*(len(key)-1)}|\t')
     print("")
 
 def log_error_cb(logconf, msg):
     print("Error when logging %s" % logconf.name)
-
 
 # CrazyRadio devices currently connected to the computer
 print("\n|- Crazyradio Devices ---" + "-" * 10)
@@ -147,8 +148,6 @@ def main():
     # -----------------------
     #scf = SyncCrazyflie(link_uri=drone_uri, cf=cf_stats)
     #scf._is_link_open = True
-    with SyncCrazyflie(drone_uri, cf=cf_stats) as scf:
-    
     # ---[ Rewrite code on SyncCrazyflie.open_link method ]---
     # scf._link_uri = drone_uri
     # scf._add_callbacks() 
@@ -162,9 +161,11 @@ def main():
     # print("wait done")
     # scf._connect_event = None
 
+    with SyncCrazyflie(drone_uri, cf=cf_stats) as scf:
+
         print("Crazyflie - Wait for params..")
         scf.wait_for_params()
-    #with SyncLogger(crazyflie=scf, log_config=log_radio):
+        #with SyncLogger(crazyflie=scf, log_config=log_radio):
 
         # ---[ Pre configuration ]---
         # Log configuration to logging framework
@@ -187,8 +188,13 @@ def main():
 
         while True:
             try:
+                # If the RSSI > 70 or mean(RSSI) > 70 -> CLOSE LINK
                 time.sleep(1)
             except KeyboardInterrupt:
+                rssi_avg = np.mean(rssi_logs)
+                rssi_std = np.std(rssi_logs)
+                print("Average RSSI: ", rssi_avg, "\nStd RSSI: ", rssi_std)
+                
                 print("--- CLOSE LINK ---")
                 scf.close_link()
                 sys.exit()
