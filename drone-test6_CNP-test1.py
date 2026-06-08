@@ -26,6 +26,7 @@ from cflib.crazyflie.syncLogger import SyncLogger
 from cflib.crazyflie.swarm import CachedCfFactory
 from cflib.crazyflie.swarm import Swarm
 import cflib.drivers.crazyradio as crazyradio
+from cflib.positioning.motion_commander import MotionCommander
 from cflib.utils import uri_helper
 from cflib.utils.reset_estimator import reset_estimator
 
@@ -38,6 +39,7 @@ import time
 
 # --- Paths
 from paths.p06_linear_motion import linear_motion
+from paths.p02_figure_8 import upload_trajectory
 
 # ------------------------------------
 # ENVIRONMENT VARIABLES
@@ -69,10 +71,11 @@ logging.basicConfig(level=logging.ERROR)
 print("Python Version", sys.version)
 print(f"Crazyradio 2.0 Version: {crazyradio.Crazyradio().version}")
 
+# ----- Drone Logs -----
 rssi_logs = []
 def log_radio_conf():
     log_conf = LogConfig(name="Radio", period_in_ms=500)
-    log_conf.add_variable('radio.rssi', 'uint8_t') # Radio Signal Strength Indicator [dBm]. E.g. 40 means -40dBm 
+    log_conf.add_variable('radio.rssi', 'uint8_t') # Radio Signal Strength Indicator [dBm]
     log_conf.add_variable('radio.isConnected', 'uint8_t') # Indicator if a packet was received from the radio within the last RADIO_ACTIVITY_TIMEOUT_MS
     log_conf.add_variable('radio.numRxBc', 'uint16_t') # Number of broadcast packets received
     log_conf.add_variable('radio.numRxUc', 'uint16_t') # Number of unicast packets received
@@ -89,6 +92,45 @@ def log_pos_conf():
     return log_conf
 
 log_pos = log_pos_conf()
+
+# ----- Drone Logs for CNP -----
+pm_state_lkp = { 0:"Battery", 1:"Charging", 2:"Charged", 3:"Low power", 4:"Shutdown" }
+def log_bid_conf():
+    log_conf = LogConfig(name="Bid", period_in_ms=500)
+    log_conf.add_variable('pm.batteryLevel', 'uint8_t')
+    log_conf.add_variable('pm.state', 'uint8_t')
+
+    log_conf.add_variable('radio.rssi', 'uint8_t') # Radio Signal Strength Indicator [dBm]
+    log_conf.add_variable('supervisor.info', 'uint16_t')
+    return log_conf
+
+"""
+Bitfield containing information about the supervisor status 
+Bit 0 = Can be armed - the system can be armed and will accept an arming command 
+Bit 1 = is armed - the system is armed
+Bit 2 = auto arm - the system is configured to automatically arm 
+Bit 3 = can fly - the Crazyflie is ready to fly 
+Bit 4 = is flying - the Crazyflie is flying. 
+Bit 5 = is tumbled - the Crazyflie is up side down. 
+Bit 6 = is locked - the Crazyflie is in the locked state and must be restarted. 
+Bit 7 = is crashed - the Crazyflie has crashed. 
+Bit 8 = high level control is actively flying the drone 
+Bit 9 = high level trajectory has finished 
+Bit 10 = high level control is disabled and not producing setpoints.
+"""
+sup_info_lkp = { 
+    0:"Can be armed", 
+    1:"Is armed", 
+    2:"Auto arm mode", 
+    3:"Ready to fly", 
+    4:"Is flying", 
+    5:"Is tumbled", 
+    6:"Is locked", 
+    7:"Is crashed", 
+    8:"HLC enabled", 
+    9:"HLT Finished", 
+    10:"HLC disabled"
+}
 
 # ------------------------------------
 # LOGS CALLBACKS
@@ -127,36 +169,43 @@ crazyflie_ready = Event()
 # ------------------------------------
 # CONFIGURATION
 # ------------------------------------
-def pre_checks(scf):
+def pre_checks(scf, params_event):
     print("-"*30)
-    print("PRE-FLIGHT CHECKS")
+    print(f"PRE-FLIGHT CHECKS: {scf.cf.link_uri}")
     print("-"*30)
     global logconf
 
     # Console configuration
     def console_callback(text: str):
         print(f"|- [Console]: {text}", end='')
-    
     scf.cf.console.receivedChar.add_callback(console_callback)
 
     # Flow deck checks callback
     def param_deck_flow(_, value_str):
-        global deck_attached_event
+        nonlocal params_event
+        #global deck_attached_event
         """The flow deck that you are using, should be correctly attached to the crazyflie. 
         If it is not, it will try to fly anyway without a good position estimate and for sure is going to crash. 
         """
+        print(params_event)
         value = int(value_str)
         if value:
-            deck_attached_event.set()
+            params_event.set()
             print(f"|- [Deck]: {_} is attached!: {value}")
         else:
             print(f"|- [Deck]: {_} is NOT attached!: {value}")
     
     scf.cf.param.add_update_callback(group="deck", name="bcFlow2", cb=param_deck_flow)
+    scf.cf.param.request_param_update('deck.bcFlow2')
+    print("Deck check [", scf.cf.link_uri, "]")
 
-    # if not deck_attached_event.wait(timeout=20):
-    #     print('No flow deck detected!')
-    #     sys.exit(1)
+    if not params_event.wait(timeout=5):
+        print(params_event)
+        print('No flow deck detected!')
+        sys.exit(1)
+    else:
+        print(params_event)
+        print("OK")
 
     # Sensor checks
     # IMU - Inertial Measurement Unit
@@ -172,7 +221,6 @@ def pre_checks(scf):
     scf.cf.param.add_update_callback(group="imu_sensors", name="BMP3XX", cb=param_imu_sensors)
     scf.cf.param.add_update_callback(group="imu_sensors", name="AK8963", cb=param_imu_sensors)
     scf.cf.param.add_update_callback(group="imu_sensors", name="LPS25H", cb=param_imu_sensors)
-    
 
     # Stabilizer - Estimator checks
     def param_estimator(_, value_str):
@@ -194,6 +242,16 @@ def pre_checks(scf):
 
     # State checks
     scf.cf.param.set_value('supervisor.infdmp', '1') # When nonzero, dump information about the current supervisor state to the console log
+
+# User Pre-Flight checks - Light checks
+def activate_led_bit_mask(scf):
+    """
+    -https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/api/params/#led
+    """
+    scf.cf.param.set_value('led.bitmask', 255)
+
+def deactivate_led_bit_mask(scf):
+    scf.cf.param.set_value('led.bitmask', 0)
 
 # ------------------------------------
 # MISSION
@@ -219,12 +277,12 @@ def commander(scf, trajectory_id, duration):
     print("|- [COMMANDER] - DRONE ARMED!")
     time.sleep(1.0)
 
-    crazyflie_ready.set()
+    #crazyflie_ready.set()
     time.sleep(3.0)
 
     takeoff_yaw = 3.14 / 2 if relative_yaw else 0.0
 
-    hl_commander.takeoff(1.0, 2.0, yaw=takeoff_yaw)
+    hl_commander.takeoff(0.3, 1.3, yaw=takeoff_yaw)
     print("|- [COMMANDER] - TAKEOFF!")
     time.sleep(3.0)
 
@@ -258,6 +316,37 @@ def commander(scf, trajectory_id, duration):
 
     print("|- -------- FINISH ------- ")
 
+def motion_com(scf):
+    sequence = [
+        (0.0, 0.0, 0.4, 0),
+        (0.2, 0.1, 0.0, 30),
+        (0.2, 0.2, 0.0, 60),
+        (0.1, 0.2, 0.0, 90),
+        (0.1, 0.1, 0.0, 120),
+        #(0.0, 0.0, 0.0, 0),
+    ]
+    with MotionCommander(scf.cf, default_height=0.3) as mc:
+        #print("|- [MOTION COMMANDER] - TAKEOFF!")
+        #mc.take_off(height=None, velocity=0.2)
+        time.sleep(2)
+
+        print("|- [MOTION COMMANDER] - MOVE DISTANCE!")
+        #mc.move_distance(distance_x_m=0.5, distance_y_m=0.0, distance_z_m=0.3, velocity=0.2)
+        #mc.start_linear_motion(velocity_x_m=0.5, velocity_y_m=0.0, velocity_z_m=0.3, rate_yaw=0.0)
+        for position in sequence:
+            mc.start_linear_motion(
+                velocity_x_m=position[0], 
+                velocity_y_m=position[1], 
+                velocity_z_m=position[2], 
+                rate_yaw=position[3]
+            )
+            time.sleep(0.5)
+        time.sleep(2)
+
+        #print("|- [MOTION COMMANDER] - LAND!")
+        #mc.land(velocity=0.2)
+        time.sleep(2)
+
 def main():
     radio = crazyradio.Crazyradio()
 
@@ -265,7 +354,7 @@ def main():
     print("\n|- Crazyradio Devices ---" + "-" * 10)
     dongles = []
     for d in crazyradio._find_devices():
-        print(f"|- \t{d.manufacturer}, {d.product} (Serial number: {d.serial_number})")
+        print(f"|\t- {d.manufacturer}, {d.product} (Serial number: {d.serial_number})")
         dongles.append(d)
     print("|------------------------" + "-" * 10)
 
@@ -274,7 +363,7 @@ def main():
 
     # Interface status
     interfaces = cflib.crtp.get_interfaces_status()
-    print(f"Radio Interface: {interfaces['radio']}")
+    print(f"|- Radio Interface: {interfaces['radio']}")
 
     # Crazyradio Interface scanning
     drones = dict() # Dictionary: { 'drone_uri': driverClass_uri}
@@ -290,7 +379,6 @@ def main():
                 link_error_callback=link_error_cb
             )
             """
-
             drones[available[0][0]] = 1
     drones_uri = list(drones.keys())
     print("Crazyflie available: ", drones_uri)
@@ -304,6 +392,61 @@ def main():
     if not drone_uri:
         sys.exit()
 
+
+    print("|------------------------" + "-" * 10)
+    factory = CachedCfFactory(rw_cache='./cache')
+    with Swarm(drones_uri, factory=factory) as swarm:
+        print('|   Crazyflies Swarm   ')
+        print("|------------------------" + "-" * 10)
+        print(f"|- [Radio] - Swarm: {list(swarm._cfs.keys())}")
+
+        cf_args = {}
+        for uri in drones_uri:
+            cf_args[uri] = [Event()]
+
+        print(cf_args)
+        print(f"[Deck check] - Swarm: {list(swarm._cfs.keys())}")
+        swarm.sequential(pre_checks, args_dict=cf_args)
+        time.sleep(3)
+
+        # Parameters
+        def wait_for_param_download(scf):
+            while not scf.cf.param.is_updated:
+                time.sleep(1.0)
+            print('|- Parameters downloaded for', scf.cf.link_uri)
+
+        swarm.parallel(wait_for_param_download)
+
+        # Execute the light check for each copter
+        def light_check(scf):
+            activate_led_bit_mask(scf)
+            time.sleep(2)
+            deactivate_led_bit_mask(scf)
+        print(f"|- [Light checks] - Swarm: {list(swarm._cfs.keys())}")
+        swarm.parallel_safe(light_check)
+
+        # Activate mellinger controller
+        for scf in swarm._cfs.values():
+            scf.cf.param.set_value('stabilizer.controller', '1')
+            
+            # Mission
+            trajectory_id = 1
+            duration = mission(scf, trajectory_id)
+
+        # Resetting the internal position estimator until the variance of the position estimation drops below a certain threshold.
+        swarm.reset_estimators()
+        time.sleep(1)
+
+        swarm_commander_args = {}
+        for uri in drones_uri:
+            swarm_commander_args[uri] = [trajectory_id, duration]
+        # swarm.parallel_safe(commander, args_dict=swarm_commander_args)
+        swarm.parallel_safe(motion_com)
+
+        swarm.close_links()
+    
+    sys.exit()
+
     with SyncCrazyflie(drone_uri, cf=cf_stats) as scf:
 
         print("Crazyflie - Wait for params..")
@@ -315,7 +458,6 @@ def main():
         pre_checks(scf)
         time.sleep(1)
 
-        # Pre configuration
         # Activate mellinger controller
         scf.cf.param.set_value('stabilizer.controller', '2')
 
@@ -344,7 +486,7 @@ def main():
         log_radio.start()
 
         # ---[ Commander ]---
-        commander(scf, trajectory_id, duration)
+        #commander(scf, trajectory_id, duration)
 
 
         while True:
@@ -367,14 +509,6 @@ def main():
                 print("--- CLOSE LINK ---")
                 scf.close_link()
                 sys.exit()
-        
-
-    """
-    factory = CachedCfFactory(rw_cache='./cache')
-    with Swarm(available, factory=factory) as swarm:
-        print('[Swarm] - Connected to Crazyflies')
-        print(f"[Radio] - Swarm: {list(swarm._cfs.keys())}")
-    """
 
 if __name__ == '__main__':
     main()

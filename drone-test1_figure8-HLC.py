@@ -40,7 +40,7 @@ load_dotenv()  # reads variables from a .env file and sets them in os.environ
 # * Channel
 # * Data rate
 # * Address
-uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE1_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # ------------------------------------
 # LOGGING
@@ -329,7 +329,7 @@ def main():
 
         # Pre configuration
         # Activate mellinger controller
-        scf.cf.param.set_value('stabilizer.controller', '1')
+        scf.cf.param.set_value('stabilizer.controller', '2')
 
         # Mission
         trajectory_id = 1
