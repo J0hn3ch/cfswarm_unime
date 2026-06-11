@@ -24,3 +24,16 @@ Testbed and scripts to interact with Crazyflie
 
 **Cairo**
 1. https://www.cairographics.org/pycairo/
+
+20 SLIDE
+PROBLEMA 
+COME LO AFFRONTIAMO
+SPECIFICHE DEL SISTEMA
+FOCUS SUGLI ELEMENTI PRINCIPALI 
+PROTOCOLLO CNP
+ORCHESTRAZIONE DA AGENTI SUL CAMPO
+INFRASTRUTTURA FOG 
+AGENTIC (FUTURE WORK)
+
+IN TESI stiamo lavorando in questi termini
+RISULTATI dei dati 
