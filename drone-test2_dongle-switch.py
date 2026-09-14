@@ -34,7 +34,7 @@ from itertools import compress
 load_dotenv()  # reads variables from a .env file and sets them in os.environ
 
 # URI to the Crazyflie to connect to
-uri = uri_helper.uri_from_env(env='DRONE1_URI', default='radio://0/80/2M/E7E7E7E7E7')
+uri = uri_helper.uri_from_env(env='DRONE2_URI', default='radio://0/80/2M/E7E7E7E7E7')
 
 # ------------------------------------
 # LOGGING

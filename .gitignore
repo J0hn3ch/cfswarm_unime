@@ -6,3 +6,7 @@ cache
 
 # Environments
 .cfswarm_venv
+.venv_cflib_latest
+
+# External libraries
+lib/pyusb
