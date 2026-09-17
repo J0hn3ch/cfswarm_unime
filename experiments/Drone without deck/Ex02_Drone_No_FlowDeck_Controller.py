@@ -20,6 +20,7 @@ from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncLogger import SyncLogger
 from cflib.utils import uri_helper
 from cflib.utils.reset_estimator import reset_estimator
+from cflib.utils.power_switch import PowerSwitch
 
 from dotenv import load_dotenv
 import numpy as np
@@ -67,7 +68,7 @@ LETTER_A = 4
 LETTER_Z = 29
 LETTER_P = 19
 LETTER_O = 18
-
+"""
 dev = core.find(idVendor=USB_VENDOR, idProduct=USB_PRODUCT)
 if dev is None:
     raise ValueError('Device not found')
@@ -77,6 +78,7 @@ if dev.is_kernel_driver_active(USB_IF) is True:
     dev.detach_kernel_driver(USB_IF)
 
 util.claim_interface(dev, USB_IF)
+"""
 
 """
 print("KEYBOARD PRINT")
@@ -229,7 +231,8 @@ def commander(scf, trajectory_id=None, duration=None):
         if 'Is armed' in sup.read_state_list():
             break
         time.sleep(0.3)
-        print("a")
+        if bool('Is locked' in scf.cf.supervisor.read_state_list()):
+            print("|- [Supervisor] - Crazyflie State: Is locked")
         continue
 
     sup.send_arming_request(do_arm=True) # ARM
@@ -237,6 +240,8 @@ def commander(scf, trajectory_id=None, duration=None):
 
     # Check Arm
     while not ('Is armed' in sup.read_state_list()): # Is armed ?
+        if bool('Is armed' in scf.cf.supervisor.read_state_list()):
+            print("|- [Supervisor] - Crazyflie State: Is armed")
         time.sleep(0.3)
         print("b")
         continue
@@ -249,15 +254,28 @@ def commander(scf, trajectory_id=None, duration=None):
         print("c")
         continue
 
-    roll = 0
-    pitch = 0
-    yaw = 0
-    thrust = 20 
+    roll    = 0.0
+    pitch   = 0.0
+    yawrate = 0
+    thrust  = 10001
+    thrust_int = 20
+
     # min = 10001 , max = 60000 
     #print(f"Is Flying: {bool(sup.decode_bitfield(4))}", end="")
 
     print("Can fly: ", bool('Can fly' in sup.read_state_list()))
     print("|- [Commander] - Drone CAN FLY!")
+
+    # Send thrust=0 first so that the crazyflie-firmware's safety protection requirements are met (https://forum.bitcraze.io/viewtopic.php?t=4574)
+    commander.send_setpoint(0.0, 0.0, 0, 0)
+    time.sleep(0.01)
+
+    # Send thrust of 30000 for 3 seconds
+    for i in range(300):
+        commander.send_setpoint(roll, pitch, yawrate, 10001)
+        time.sleep(0.01)  # send the setpoint once every 10 ms as per the user guide
+    commander.send_stop_setpoint()
+    return
 
     while 'Can fly' in sup.read_state_list(): # Is flying ?
         control = None
@@ -293,15 +311,15 @@ def commander(scf, trajectory_id=None, duration=None):
                     print("CRASH RECOVERY REQUEST")
                     sup.send_crash_recovery_request() # Use Ctrl + R to send a "Crash Recovery" request
                 case 18:
-                    yaw -= 20
-                    #commander.send_setpoint_manual(0, 0, yaw, thrust, rate=False)
+                    yawrate -= 20
+                    #commander.send_setpoint_manual(0, 0, yawrate, thrust, rate=False)
                 case 19:
-                    yaw += 20
-                    #commander.send_setpoint_manual(0, 0, yaw, thrust, rate=False)
+                    yawrate += 20
+                    #commander.send_setpoint_manual(0, 0, yawrate, thrust, rate=False)
                 case None:
                     raise Exception
                 case _: # wildcard - simile ad un else, deve stare alla fine
-                    print("Roll: ", roll, "Pitch: ", pitch, "Yaw: ", yaw, "Thrust: ", thrust)
+                    print("Roll: ", roll, "Pitch: ", pitch, "Yaw: ", yawrate, "Thrust: ", thrust)
                     roll = 0
                     pitch = 0
 
@@ -327,7 +345,7 @@ def commander(scf, trajectory_id=None, duration=None):
         except:
             #commander.send_setpoint(0, 0, 0, int(0.5 * 1000))
             commander.send_setpoint_manual(0, 0, 0, thrust, rate=False)
-            #commander.send_setpoint_manual(0, 0, yaw, thrust, rate=False) # roll, pitch, yawrate, thrust_percentage, rate
+            #commander.send_setpoint_manual(0, 0, yawrate, thrust, rate=False) # roll, pitch, yawrate, thrust_percentage, rate
             pass
 
         sup.send_emergency_stop_watchdog()
@@ -377,11 +395,11 @@ def commander(scf, trajectory_id=None, duration=None):
                 case 17:
                     sup.send_crash_recovery_request()
                 case 18:
-                    yaw -= 10
-                    commander.send_setpoint_manual(0, 0, yaw, thrust, rate=False)
+                    yawrate -= 10
+                    commander.send_setpoint_manual(0, 0, yawrate, thrust, rate=False)
                 case 19:
-                    yaw += 10
-                    commander.send_setpoint_manual(0, 0, yaw, thrust, True)
+                    yawrate += 10
+                    commander.send_setpoint_manual(0, 0, yawrate, thrust, True)
                 case None:
                     raise Exception
                 case _: # wildcard - simile ad un else, deve stare alla fine
@@ -484,6 +502,7 @@ def main():
         sys.exit()
 
     with SyncCrazyflie(drone_uri, cf=cf_stats) as scf:
+        time.sleep(3)  # give some time to establish connection; 3 sec seems to work
 
         print("Crazyflie - Wait for params..")
         scf.wait_for_params()
