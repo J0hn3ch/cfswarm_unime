@@ -362,11 +362,7 @@ if __name__ == '__main__':
             plt.show(block=True)
             plt.pause(10)
 
-            print("[Script]: After FuncAnimation")
-
-            
-
-            
+            print("[Script]: After FuncAnimation")         
             
             while True:
                 #print(log_entry[1])

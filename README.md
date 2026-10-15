@@ -48,5 +48,15 @@ _Install dependencies_
 1. [AttributeError: 'TimedAnimation' object has no attribute '_framedata'](https://github.com/matplotlib/matplotlib/issues/30831)
 2. [Logging data with Matplotlib Animation issues](https://github.com/bitcraze/crazyflie-lib-python/issues/584)
 
+**NOT WORKING - VisPy**
+_Dependencies:_
+* jupyter_rfb - https://github.com/vispy/jupyter_rfb - `python -m pip install jupyter_rfb`
+* vispy : `python -m pip install --upgrade vispy`
+* pytest : `python -m pip install "pytest<8.0" --no-binary pytest`
+* AAA - flake8 : `python -m pip install --upgrade flake8`
+* Lark : `python -m pip install lark --upgrade`
+* Backend for OpenGL context - pyglet : `python -m pip install --upgrade pyglet`
+* 
+
 **Cairo**
 1. https://www.cairographics.org/pycairo/
