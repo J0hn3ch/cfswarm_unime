@@ -1,0 +1,4 @@
+run,velocity_ms,rep,target_cm,dist_at_stop_cm,dist_final_cm,drift_cm,yaw_change_deg,forward_time_s,stop_reason,vbat_start_v,vbat_end_v,batt_start_pct_est,batt_end_pct_est,measured_cm,file,wall_time
+1,0.2,1,50.0,50.8,57.4,11.2,-1.2,3.12,distance,3.8639297485351562,3.7689149379730225,58.5,29.7,,run01_v0.20_rep1.csv,2026-10-17T20:23:12
+2,0.2,3,50.0,50.7,59.2,5.9,-1.4,3.12,distance,3.826979637145996,3.747800588607788,46.7,24.5,,run02_v0.20_rep3.csv,2026-10-17T20:23:44
+3,0.2,2,50.0,50.3,57.3,-4.4,0.4,3.01,distance,3.8111438751220703,3.7425220012664795,42.8,23.1,,run03_v0.20_rep2.csv,2026-10-17T20:24:20
