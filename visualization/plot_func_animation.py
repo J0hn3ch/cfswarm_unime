@@ -41,6 +41,6 @@ def run(data):
     return line,
 
 # Only save last 100 frames, but run forever
-ani = animation.FuncAnimation(fig, run, data_gen, interval=100, init_func=init,
+ani = animation.FuncAnimation(fig, run, data_gen, interval=1000, init_func=init,
                               save_count=100)
 plt.show()
